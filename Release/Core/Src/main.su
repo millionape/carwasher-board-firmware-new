@@ -28,4 +28,4 @@ main.c:812:6:add_coin_credit	48	static
 main.c:843:6:HAL_TIM_IC_CaptureCallback	64	static
 main.c:916:6:read_settings_from_eeprom	72	static
 main.c:146:5:main	24	static
-main.c:968:6:Error_Handler	0	static,ignoring_inline_asm
+main.c:969:6:Error_Handler	0	static,ignoring_inline_asm
