@@ -43,6 +43,8 @@
 /* USER CODE BEGIN PD */
 #define SW_DEBOUNCE_TIME 80
 #define IOT_SEND_INTERVAL 5
+#define CREDIT_HI_BYTE 0x06
+#define CREDIT_LO_BYTE 0x07
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,7 +78,11 @@ void reset_all_pins(void);
 void setting_menu_loop(void);
 void segment_display_function_settings(int func_number,int value);
 void display_menu(uint8_t selected_menu);
+/////  eeprom stuff
 void eeprom_write(uint8_t addr, uint8_t data);
+void store_credit_eeprom(uint16_t credit);
+uint16_t read_credit_eeprom(void);
+/////  eeprom stuff
 void set_add_duration_of_function(uint8_t _selected_menu);
 void set_substract_duration_of_function(uint8_t _selected_menu);
 void read_settings_from_eeprom(void);
@@ -193,7 +199,7 @@ int main(void)
 		uint8_t btn_read = read_button();
 		if(btn_read == 6){ // credit reset is press
 			reset_all_state();
-			eeprom_write(0x06,credit); // save last credit value
+			store_credit_eeprom(credit); // save last credit value
 			continue;
 		}
 		if(btn_read == 7){ // mode button is pressed
@@ -323,6 +329,12 @@ void setting_menu_loop(){
 		}
 	}
 }
+void store_credit_eeprom(uint16_t store_credit){
+	uint8_t hbits=store_credit & 0xff;
+	uint8_t lbits=(store_credit >> 8);
+	eeprom_write(CREDIT_HI_BYTE, hbits);
+	eeprom_write(CREDIT_LO_BYTE, lbits);
+}
 void eeprom_write(uint8_t addr, uint8_t data){
 	/*
 	 * EEPROM ADDRESS TABLE
@@ -354,8 +366,11 @@ void eeprom_write(uint8_t addr, uint8_t data){
 	case 0x05:
 		HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR5, data);
 		break;
-	case 0x06:
+	case 0x06:  /// credit hi bit
 		HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR6, data);
+		break;
+	case 0x07:  /// credit lo bit
+		HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR7, data);
 		break;
 	}
 
@@ -542,7 +557,7 @@ void decrease_credit(){
 				reset_all_state();
 			}
 		}
-		eeprom_write(0x06,credit);
+		store_credit_eeprom(credit);
 	}
 }
 void do_1sec_tick(){
@@ -567,7 +582,7 @@ void do_1sec_tick(){
 	}
 }
 void do_500ms_tick(){
-	eeprom_write(0x06,credit);
+
 }
 void do_200ms_tick(){
 	if(front_button_reset_credit_press){
@@ -583,6 +598,7 @@ void do_200ms_tick(){
 	}
 }
 void do_300ms_tick(){
+	store_credit_eeprom(credit);
 	HAL_GPIO_TogglePin(ALIVE_LED_GPIO_Port, ALIVE_LED_Pin);
 }
 
@@ -790,6 +806,7 @@ void add_bank_note_credit(uint32_t pulse_width){
 		if(credit >= 999){
 			credit = 999;
 		}
+		store_credit_eeprom(credit);
 		max7219_Turn_On();
 		segment_display_int(credit);
 		is_standby = false;
@@ -824,6 +841,7 @@ void add_coin_credit(uint32_t pulse_width) {
 		if(credit >= 999){
 			credit = 999;
 		}
+		store_credit_eeprom(credit);
 		is_standby = false;
 		max7219_Turn_On();
 		segment_display_int(credit);
@@ -913,13 +931,19 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 	}
 	HAL_TIM_Base_Start_IT(&htim2);
 }
+uint16_t read_credit_eeprom(){
+	uint8_t hbits = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR6);
+	uint8_t lbits = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR7);
+	u_int16_t converted_value = (lbits << 8) | hbits;
+	return converted_value;
+}
 void read_settings_from_eeprom(void){
 	F1_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1);
 	F2_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR2);
 	F3_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR3);
 	F4_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR4);
 	F5_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR5);
-	credit = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR6);
+	credit = read_credit_eeprom();
 	if(HAL_GPIO_ReadPin(USER_SEL_GPIO_Port, USER_SEL_Pin) == GPIO_PIN_SET){
 		credit = 999;
 	}
