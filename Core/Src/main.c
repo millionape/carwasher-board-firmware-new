@@ -41,7 +41,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SW_DEBOUNCE_TIME 80
+#define SW_DEBOUNCE_TIME 130
 #define IOT_SEND_INTERVAL 5
 #define CREDIT_HI_BYTE 0x06
 #define CREDIT_LO_BYTE 0x07
@@ -88,6 +88,8 @@ void set_substract_duration_of_function(uint8_t _selected_menu);
 void read_settings_from_eeprom(void);
 void reset_all_state(void);
 void send_iot_status(uint8_t money_event);
+void stop_acceptors(void);
+void start_acceptors(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -100,8 +102,8 @@ volatile int tim2_500ms_counter = 0;
 volatile int iot_round_counter = 0;
 volatile bool is_operation_running = false;
 volatile uint16_t credit = 0;   // credit store
-uint8_t pressed_button = 0;
-uint8_t setting_mode = 0;
+volatile uint8_t pressed_button = 0;
+volatile uint8_t setting_mode = 0;
 volatile uint8_t current_out_port = 0;
 volatile bool is_standby = true;
 volatile uint8_t standby_counter = 0;
@@ -128,15 +130,15 @@ volatile uint32_t coin_IC_Val2 = 0;
 volatile uint32_t coin_Difference = 0;
 volatile uint8_t coin_Is_First_Captured = 0;  // is the first value captured ?
 
-volatile uint8_t bank_acceptor_pulse_width = 33;
-volatile uint8_t coin_acceptor_pulse_width = 40;
-uint8_t creditPulseOffset = 15;
+volatile const int8_t bank_acceptor_pulse_width = 45;
+volatile const int8_t coin_acceptor_pulse_width = 50;
+volatile const int8_t creditPulseOffset = 10;
 
-volatile uint8_t bank_credit_per_pulse = 10;
-volatile uint8_t coin_credit_per_pulse = 1;
+volatile const uint8_t bank_credit_per_pulse = 10;
+volatile const uint8_t coin_credit_per_pulse = 1;
 
-volatile int minimum_credit_to_start = 10;
-uint8_t default_credit_duration = 10;
+volatile const int minimum_credit_to_start = 10;
+volatile const uint8_t default_credit_duration = 10;
 
 volatile uint8_t last_note_money = 0;
 volatile uint8_t last_coin_money = 0;
@@ -183,10 +185,10 @@ int main(void)
 	reset_all_pins();
 	read_settings_from_eeprom();
 	init_display();
-	HAL_TIM_Base_Start_IT(&htim2);
 	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
 	reset_all_pins();
+	HAL_TIM_Base_Start_IT(&htim2);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -223,6 +225,8 @@ int main(void)
 			pressed_button = 0;
 			reset_all_pins();
 		}
+		HAL_Delay(120);
+		start_acceptors();
 
 	}
 	/* USER CODE END 3 */
@@ -523,9 +527,9 @@ uint8_t get_function_duration(uint8_t selected_mode){
 	return duration_per_1credit;
 }
 void reset_all_state(){
-	HAL_TIM_Base_Stop_IT(&htim2);
-	__HAL_TIM_SET_COUNTER(&htim2, 0);
-	__HAL_TIM_CLEAR_IT(&htim2, TIM_IT_UPDATE);
+	//	HAL_TIM_Base_Stop_IT(&htim2);
+	//	__HAL_TIM_SET_COUNTER(&htim2, 0);
+	//	__HAL_TIM_CLEAR_IT(&htim2, TIM_IT_UPDATE);
 	reset_all_pins();
 	consume_credit = false;
 	credit = 0;
@@ -539,7 +543,20 @@ void reset_all_state(){
 	tim2_300ms_counter = 0;
 	tim2_400ms_counter = 0;
 	tim2_200ms_counter = 0;
-	HAL_TIM_Base_Start_IT(&htim2);
+	//	HAL_TIM_Base_Start_IT(&htim2);
+}
+void stop_acceptors(){
+	HAL_TIM_Base_Stop_IT(&htim3);
+	HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_2);
+	__HAL_TIM_SET_COUNTER(&htim3, 0);
+	__HAL_TIM_CLEAR_IT(&htim3, TIM_IT_UPDATE);
+}
+
+void start_acceptors(){
+	HAL_TIM_Base_Start_IT(&htim3);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
 }
 void decrease_credit(){
 	if(consume_credit){
@@ -637,6 +654,8 @@ void set_output_to(uint8_t pin){
 	if(current_out_port == pin){
 		return;
 	}
+	HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_2);
 	reset_all_pins();
 	switch(pin){
 	case 1:
@@ -656,6 +675,7 @@ void set_output_to(uint8_t pin){
 		break;
 	case 4:
 		HAL_GPIO_WritePin(OUT_4_GPIO_Port, OUT_4_Pin, GPIO_PIN_SET); // pin b8 --> out 4
+		HAL_GPIO_WritePin(OUT_6_GPIO_Port, OUT_6_Pin, GPIO_PIN_SET); // pin b12 --> out 6
 		current_out_port = 4;
 		//		HAL_UART_Transmit(&huart1, (uint8_t*)"SET OUTPUT TO PORT4\r\n", 21,HAL_MAX_DELAY);
 		break;
@@ -669,6 +689,8 @@ void set_output_to(uint8_t pin){
 		current_out_port = 0;
 		break;
 	}
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
 }
 
 void do_operation(){
@@ -682,26 +704,31 @@ void do_operation(){
 
 uint8_t read_button(){
 	if(HAL_GPIO_ReadPin(FRONT_SW_1_GPIO_Port, FRONT_SW_1_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(FRONT_SW_1_GPIO_Port, FRONT_SW_1_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button1!\r\n", 18,HAL_MAX_DELAY);
 		return 1;
 	}else if(HAL_GPIO_ReadPin(FRONT_SW_2_GPIO_Port, FRONT_SW_2_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(FRONT_SW_2_GPIO_Port, FRONT_SW_2_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button2!\r\n", 18,HAL_MAX_DELAY);
 		return 2;
 	}else if(HAL_GPIO_ReadPin(FRONT_SW_3_GPIO_Port, FRONT_SW_3_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(FRONT_SW_3_GPIO_Port, FRONT_SW_3_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button3!\r\n", 18,HAL_MAX_DELAY);
 		return 3;
 	}else if(HAL_GPIO_ReadPin(FRONT_SW_4_GPIO_Port, FRONT_SW_4_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(FRONT_SW_4_GPIO_Port, FRONT_SW_4_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button4!\r\n", 18,HAL_MAX_DELAY);
 		return 4;
 	}else if(HAL_GPIO_ReadPin(FRONT_SW_5_GPIO_Port, FRONT_SW_5_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		front_button_reset_credit_press = true;
 		while(HAL_GPIO_ReadPin(FRONT_SW_5_GPIO_Port, FRONT_SW_5_Pin)){
@@ -714,11 +741,13 @@ uint8_t read_button(){
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button5!\r\n", 18,HAL_MAX_DELAY);
 		return 5;
 	}else if(HAL_GPIO_ReadPin(CREDIT_RESET_GPIO_Port, CREDIT_RESET_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(CREDIT_RESET_GPIO_Port, CREDIT_RESET_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button credit reset!\r\n", 30,HAL_MAX_DELAY);
 		return 6;
 	}else if(HAL_GPIO_ReadPin(MODE_SW_GPIO_Port, MODE_SW_Pin)){
+		stop_acceptors();
 		HAL_Delay(SW_DEBOUNCE_TIME);
 		while(HAL_GPIO_ReadPin(MODE_SW_GPIO_Port, MODE_SW_Pin));
 		HAL_UART_Transmit(&huart1, (uint8_t*)"pressed button mode!\r\n", 22,HAL_MAX_DELAY);
@@ -892,7 +921,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 			add_bank_note_credit(Difference/1000);
 
 			char tmpp[35];
-			sprintf(tmpp,"CH1:captured val : %d \r\n",(int)Difference);
+			sprintf(tmpp,"CH2:captured val : %d \r\n",(int)Difference);
 			HAL_UART_Transmit(&huart1, (uint8_t*)tmpp, strlen(tmpp), HAL_MAX_DELAY);
 		}
 	}
@@ -925,7 +954,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 			add_coin_credit(coin_Difference/1000);
 
 			char tmpp[35];
-			sprintf(tmpp,"CH2:captured val : %d \r\n",(int)coin_Difference);
+			sprintf(tmpp,"CH1:captured val : %d \r\n",(int)coin_Difference);
 			HAL_UART_Transmit(&huart1, (uint8_t*)tmpp, strlen(tmpp), HAL_MAX_DELAY);
 		}
 	}
@@ -944,9 +973,9 @@ void read_settings_from_eeprom(void){
 	F4_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR4);
 	F5_DURATION = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR5);
 	credit = read_credit_eeprom();
-	if(HAL_GPIO_ReadPin(USER_SEL_GPIO_Port, USER_SEL_Pin) == GPIO_PIN_SET){
-		credit = 999;
-	}
+	//	if(HAL_GPIO_ReadPin(USER_SEL_GPIO_Port, USER_SEL_Pin) == GPIO_PIN_SET){
+	//		credit = 999;
+	//	}
 	if(credit >= 2){
 		is_operation_running = true;
 		is_standby = false;
