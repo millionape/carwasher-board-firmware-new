@@ -237,7 +237,8 @@ int main(void)
 			pressed_button = 0;
 			reset_all_pins();
 		}
-		HAL_Delay(120);
+		enable_exti();
+		HAL_Delay(100);
 		//		start_acceptors();
 
 	}
@@ -672,6 +673,13 @@ void init_display(){
 	max7219_Decode_On ();
 }
 void reset_all_pins(){
+	char tmp_msg[50];
+	sprintf(tmp_msg, ">>>>>>>> reset_all_pins\r\n");
+	HAL_UART_Transmit(&huart1, (uint8_t*)tmp_msg, strlen(tmp_msg), HAL_MAX_DELAY);
+	if(current_out_port != 0){
+		disable_exti();
+	}
+	//// to prevent noise from relay
 	HAL_GPIO_WritePin(OUT_1_GPIO_Port, OUT_1_Pin, GPIO_PIN_RESET); // pin b0 --> out 1
 	HAL_GPIO_WritePin(OUT_2_GPIO_Port, OUT_2_Pin, GPIO_PIN_RESET); // pin b1 --> out 2
 	HAL_GPIO_WritePin(OUT_3_GPIO_Port, OUT_3_Pin, GPIO_PIN_RESET); // pin a8 --> out 3
@@ -679,7 +687,14 @@ void reset_all_pins(){
 	HAL_GPIO_WritePin(OUT_5_GPIO_Port, OUT_5_Pin, GPIO_PIN_RESET); // pin b9 --> out 5
 	HAL_GPIO_WritePin(OUT_6_GPIO_Port, OUT_6_Pin, GPIO_PIN_RESET); // pin b12 --> out 6
 	current_out_port = 0;
-	enable_exti();
+	if(exti_disable){
+		int i=0;
+		for(i=0; i<2000000;i++){
+			asm("NOP");
+		}
+		enable_exti();
+	}
+
 }
 
 void set_output_to(uint8_t pin){
@@ -723,11 +738,13 @@ void set_output_to(uint8_t pin){
 		current_out_port = 0;
 		break;
 	}
-	int i=0;
-	for(i=0; i<2000000;i++){
-		asm("NOP");
+	if(exti_disable){
+		int i=0;
+		for(i=0; i<2000000;i++){
+			asm("NOP");
+		}
+		enable_exti();
 	}
-	enable_exti();
 	//	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
 	//	HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
 }
@@ -865,7 +882,7 @@ void add_bank_note_credit(){
 		if(credit >= 999){
 			credit = 999;
 		}
-		store_credit_eeprom(credit);
+		//		store_credit_eeprom(credit);
 		max7219_Turn_On();
 		segment_display_int(credit);
 		is_standby = false;
@@ -893,7 +910,7 @@ void add_coin_credit() {
 		if(credit >= 999){
 			credit = 999;
 		}
-		store_credit_eeprom(credit);
+		//		store_credit_eeprom(credit);
 		is_standby = false;
 		max7219_Turn_On();
 		segment_display_int(credit);
