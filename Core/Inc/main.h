@@ -86,6 +86,12 @@ void Error_Handler(void);
 #define ALIVE_LED_GPIO_Port GPIOA
 #define CREDIT_RESET_Pin GPIO_PIN_15
 #define CREDIT_RESET_GPIO_Port GPIOA
+#define COIN_IT_Pin GPIO_PIN_4
+#define COIN_IT_GPIO_Port GPIOB
+#define COIN_IT_EXTI_IRQn EXTI4_IRQn
+#define BANK_IT_Pin GPIO_PIN_5
+#define BANK_IT_GPIO_Port GPIOB
+#define BANK_IT_EXTI_IRQn EXTI9_5_IRQn
 #define OUT_4_Pin GPIO_PIN_8
 #define OUT_4_GPIO_Port GPIOB
 #define OUT_5_Pin GPIO_PIN_9
